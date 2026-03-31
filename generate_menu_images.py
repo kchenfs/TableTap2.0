@@ -54,7 +54,8 @@ same angle (slightly overhead or 45°), same warm dark-wood surface, same soft d
 NEGATIVE_CONSTRAINTS = """
 Do NOT add any ingredients not listed below.
 Do NOT add sauces, garnishes, or toppings unless explicitly mentioned.
-Do NOT add text, watermarks, or decorative borders.
+Do NOT add text, watermarks, decorative borders, black bars, or letterboxing.
+CRITICAL INSTRUCTION: The image must completely fill the entire canvas edge-to-edge.
 The image must look like a real photograph, not an illustration.
 """.strip()
 
@@ -177,16 +178,18 @@ def upload_to_s3(bucket: str, region: str, key: str, image_bytes: bytes) -> str:
 
 MODEL = "gemini-3-pro-image-preview"
 
+MODEL = "gemini-3.1-flash-image-preview"
+
 def generate_image(
     client,
     item_name: str,
     description: str,
-    reference_parts: list[dict],
+    subject_parts: list[dict],
+    style_parts: list[dict],
     dry_run: bool = False,
 ) -> bytes | None:
     """
-    Call Gemini to generate a food image.
-    Returns raw JPEG bytes, or None on failure.
+    Call Gemini to generate a food image using interleaved subject and style references.
     """
     prompt_text = build_prompt(item_name, description)
 
@@ -194,26 +197,37 @@ def generate_image(
         print(f"\n[DRY RUN] Prompt for '{item_name}':\n{prompt_text}\n")
         return None
 
-    # Build the content list: reference images first, then the text prompt
-    # Sending references first gives the model visual context before the instruction
     contents = []
-    for ref in reference_parts:
-        contents.append(genai_types.Part(inline_data=genai_types.Blob(
-            mime_type=ref["inline_data"]["mime_type"],
-            data=base64.b64decode(ref["inline_data"]["data"]),
-        )))
+
+    # 1. Inject Subject References (The Shape/Structure)
+    if subject_parts:
+        contents.append(genai_types.Part(text="Use the following images STRICTLY for the physical shape, structure, and ingredient layering of the food item. Do not copy the lighting or background from these images:"))
+        for ref in subject_parts:
+            contents.append(genai_types.Part(inline_data=genai_types.Blob(
+                mime_type=ref["inline_data"]["mime_type"],
+                data=base64.b64decode(ref["inline_data"]["data"]),
+            )))
+
+    # 2. Inject Style References (The Plating/Theme)
+    if style_parts:
+        contents.append(genai_types.Part(text="Use the following images STRICTLY for the artistic style: the exact plating, moody lighting, dark wood surfaces, and overall cinematic restaurant aesthetic:"))
+        for ref in style_parts:
+            contents.append(genai_types.Part(inline_data=genai_types.Blob(
+                mime_type=ref["inline_data"]["mime_type"],
+                data=base64.b64decode(ref["inline_data"]["data"]),
+            )))
+
+    # 3. Inject the final constraints and description
     contents.append(genai_types.Part(text=prompt_text))
 
     response = client.models.generate_content(
         model=MODEL,
         contents=contents,
         config=genai_types.GenerateContentConfig(
-            response_modalities=["IMAGE", "TEXT"],
-            # Aspect ratio — square works best for menu cards
-            # Uncomment and adjust if the model supports it:
-            # image_generation_config=genai_types.ImageGenerationConfig(
-            #     number_of_images=1,
-            # ),
+            response_modalities=["IMAGE"],
+            image_config=genai_types.ImageConfig(
+                aspect_ratio="1:1"
+            )
         ),
     )
 
@@ -233,7 +247,8 @@ def slugify(name: str) -> str:
 def process_item(
     item: dict,
     client,
-    reference_parts: list[dict],
+    subject_parts: list[dict], # Updated from reference_parts
+    style_parts: list[dict],   # Added
     table_name: str,
     bucket: str,
     cf_domain: str,
@@ -258,7 +273,8 @@ def process_item(
 
     for attempt in range(1, retry_limit + 1):
         try:
-            image_bytes = generate_image(client, item_name, description, reference_parts, dry_run)
+            # Updated to pass both subject and style parts
+            image_bytes = generate_image(client, item_name, description, subject_parts, style_parts, dry_run)
 
             if dry_run:
                 return {"item": item_name, "status": "dry_run", "url": cf_url}
@@ -268,7 +284,6 @@ def process_item(
 
             upload_to_s3(bucket, region, s3_key, image_bytes)
             update_image_url(table_name, region, item_number, cf_url, item_name)
-
 
             return {"item": item_name, "status": "ok", "url": cf_url}
 
@@ -286,7 +301,8 @@ def process_item(
 
 def main():
     parser = argparse.ArgumentParser(description="Generate menu images with Gemini")
-    parser.add_argument("--references",    nargs="+", required=True,  help="Paths to 1–4 reference food photos")
+    parser.add_argument("--subject-refs", nargs="*", default=[], help="Photos showing the exact shape/structure of the sushi roll")
+    parser.add_argument("--style-refs",   nargs="*", default=[], help="Photos showing the moody lighting, plating, and table theme")
     parser.add_argument("--table",         required=True,              help="DynamoDB table name")
     parser.add_argument("--bucket",        required=True,              help="S3 bucket name")
     parser.add_argument("--cf-domain",     required=True,              help="CloudFront base URL e.g. https://dXXX.cloudfront.net")
@@ -307,8 +323,9 @@ def main():
 
     # ── Load and prepare reference images
     print("\nPreparing reference images...")
-    reference_parts = load_references(args.references)
-    print(f"Loaded {len(reference_parts)} reference image(s)\n")
+    subject_parts = load_references(args.subject_refs)
+    style_parts = load_references(args.style_refs)
+    print(f"Loaded {len(subject_parts)} subject reference(s) and {len(style_parts)} style reference(s)\n")
 
     # ── Fetch menu from DynamoDB
     all_items = fetch_all_items(args.table, args.region)
@@ -338,7 +355,7 @@ def main():
         with ThreadPoolExecutor(max_workers=args.workers) as pool:
             futures = {
                 pool.submit(
-                    process_item, item, client, reference_parts,
+                    process_item, item, client, subject_parts, style_parts, # Updated these two variables
                     args.table, args.bucket, args.cf_domain, args.region, args.dry_run
                 ): item
                 for item in all_items
@@ -349,7 +366,7 @@ def main():
         # Sequential — safer, easier to debug
         for item in tqdm(all_items, unit="item"):
             result = process_item(
-                item, client, reference_parts,
+                item, client, subject_parts, style_parts, # pass both lists here
                 args.table, args.bucket, args.cf_domain, args.region, args.dry_run
             )
             results.append(result)
