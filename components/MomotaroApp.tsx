@@ -198,7 +198,7 @@ export default function MomotaroApp({ appMode, tableId }: MomotaroAppProps) {  c
       {/* Menu */}
       <main style={{ padding: '0 14px 120px' }}>
         {isLoading && <LoadingSpinner />}
-        {error && <ErrorMessage error={error instanceof Error ? error : new Error('Unknown error')} />}
+        {error ? <ErrorMessage error={error instanceof Error ? error : new Error('Unknown error')} /> : null}
         {!isLoading && !error && (
           <div style={{ display: 'flex', flexDirection: 'column', gap: '40px' }}>
             {filteredCategories.length > 0 ? (

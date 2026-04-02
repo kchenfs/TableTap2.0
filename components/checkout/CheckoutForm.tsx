@@ -119,7 +119,7 @@ export default function CheckoutForm({ cart, total, orderNote }: CheckoutFormPro
 
       <form onSubmit={handleManualSubmit}>
         <h3 style={{ fontSize: '16px', fontWeight: 500, color: 'var(--text)', marginBottom: '14px' }}>Payment Details</h3>
-        <PaymentElement id="payment-element" options={{ fields: { name: 'auto' }, layout: { type: 'tabs', defaultCollapsed: false } }} />
+        <PaymentElement id="payment-element" options={{ fields: { billingDetails: { name: 'auto' } }, layout: { type: 'tabs', defaultCollapsed: false } }} />
 
         <h3 style={{ fontSize: '16px', fontWeight: 500, color: 'var(--text)', margin: '20px 0 14px' }}>Contact Info <span style={{ fontSize: '12px', color: 'var(--text-3)', fontWeight: 300 }}>(Optional)</span></h3>
         <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
