@@ -40,13 +40,31 @@ export default function CheckoutForm({ cart, total, orderNote }: CheckoutFormPro
 
   const createPaymentIntent = async (customerDetails?: { email?: string; phone?: string }) => {
     try {
-      const paymentApiUrl = process.env.NEXT_PUBLIC_API_GATEWAY_URL;
+      const paymentApiUrl = process.env.NEXT_PUBLIC_API_CHECKOUT;
       const orderId = nanoid(5).toUpperCase();
-      const res = await fetch(paymentApiUrl || '', {
+      
+      // --- ADD THIS BLOCK TO FORMAT THE ITEMS ---
+      const formattedItems = cart.map(i => ({
+        id: i.menuItem.id,
+        name: i.menuItem.name,
+        price: i.finalPrice,
+        quantity: i.quantity,
+        subtotal: i.finalPrice * i.quantity,
+        location: i.menuItem.location,
+        options: Object.entries(i.selectedOptions)
+          .map(([group, opt]: any) => `${group}: ${opt.name}`)
+          .join('; '),
+      }));
+
+      const res = await await fetch(paymentApiUrl || '', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          items: cart,
+          amount: Math.round(total * 100),
+          
+          // --- CHANGE THIS LINE TO USE formattedItems ---
+          items: formattedItems, 
+          
           metadata: { order_id: orderId },
           notes: orderNote,
           customerDetails: {
@@ -55,6 +73,7 @@ export default function CheckoutForm({ cart, total, orderNote }: CheckoutFormPro
           },
         }),
       });
+      
       const data = await res.json();
       if (data.error) throw new Error(data.error);
       return data.clientSecret;

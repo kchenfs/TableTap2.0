@@ -122,11 +122,13 @@ export default function MomotaroApp({ appMode, tableId }: MomotaroAppProps) {  c
     }
   };
 
-  const total = useMemo(() => cart.reduce((s, i) => s + i.finalPrice * i.quantity, 0), [cart]);
+  const subtotal = useMemo(() => cart.reduce((s, i) => s + i.finalPrice * i.quantity, 0), [cart]);
+  const taxRate = 0.13; // 13% HST for Ontario
+  const total = subtotal * (1 + taxRate);
 
   useEffect(() => {
     if (appMode === 'takeout' && total > 0) {
-      const url = process.env.NEXT_PUBLIC_PAYMENT_API_URL || '';
+      const url = process.env.NEXT_PUBLIC_API_CHECKOUT || '';
       axios.post(url, { amount: Math.round(total * 100), cart: cart.map(i => ({ id: i.menuItem.id, name: i.menuItem.name, quantity: i.quantity, price: i.finalPrice, selectedOptions: i.selectedOptions })) })
         .then(res => setClientSecret(res.data.clientSecret))
         .catch(err => console.error('Intent error:', err));
@@ -137,24 +139,59 @@ export default function MomotaroApp({ appMode, tableId }: MomotaroAppProps) {  c
 
   const handleCheckout = async () => {
     setIsCheckingOut(true);
+    
     if (appMode === 'takeout') {
-      if (clientSecret) { setIsCheckoutModalOpen(true); closeCart(); }
+      if (clientSecret) {
+        setIsCheckoutModalOpen(true);
+        closeCart();
+      }
       setIsCheckingOut(false);
     } else {
       try {
-        const headers = { 'Content-Type': 'application/json', 'x-api-key': process.env.NEXT_PUBLIC_API_KEY || '' };
-        await axios.post(process.env.NEXT_PUBLIC_TABLE_TAP_URL || '', {
+        // 1. Prepare Request Configuration
+        const url = process.env.NEXT_PUBLIC_API_DINE_IN || '';
+        const config = {
+          headers: {
+            'Content-Type': 'application/json',
+            'x-api-key': process.env.NEXT_PUBLIC_API_KEY || ''
+          }
+        };
+
+        // 2. Prepare Payload
+        const payload = {
           items: cart.map(i => ({
-            id: i.menuItem.id, name: i.menuItem.name, price: i.finalPrice, quantity: i.quantity,
-            subtotal: i.finalPrice * i.quantity, location: i.menuItem.location,
-            options: Object.entries(i.selectedOptions).map(([g, o]) => `${g}: ${o.name}`).join('; '),
+            id: i.menuItem.id,
+            name: i.menuItem.name,
+            price: i.finalPrice,
+            quantity: i.quantity,
+            subtotal: i.finalPrice * i.quantity,
+            location: i.menuItem.location,
+            options: Object.entries(i.selectedOptions)
+              .map(([group, opt]) => `${group}: ${opt.name}`)
+              .join('; '),
           })),
-          total, orderDate: new Date().toISOString(), order_id: nanoid(5).toUpperCase(),
-          notes: orderNote || '', table: tableId, orderType: appMode,
-        }, { headers });
+          total,
+          orderDate: new Date().toISOString(),
+          order_id: nanoid(5).toUpperCase(),
+          notes: orderNote || '',
+          table: tableId,
+          orderType: appMode,
+        };
+
+        // 3. Fire the Request
+        await axios.post(url, payload, config);
+
+        // 4. Success Handlers
         clearCart();
+        closeCart();
+        setToastMessage("Order sent to kitchen!");
+        
+        if (toastTimeoutRef.current) clearTimeout(toastTimeoutRef.current);
+        toastTimeoutRef.current = setTimeout(() => setToastMessage(null), 3500);
+
       } catch (e) {
         console.error('Checkout failed:', e);
+        setToastMessage("Connection error. Please try again.");
       } finally {
         setIsCheckingOut(false);
       }

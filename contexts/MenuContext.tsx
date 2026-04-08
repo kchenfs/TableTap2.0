@@ -5,8 +5,8 @@ import { APIMenuItem, MenuCategory } from '@/lib/types';
 import { organizeMenuByCategory } from '@/lib/menuUtils';
 
 const fetchMenu = async (): Promise<APIMenuItem[]> => {
-  const apiUrl = process.env.NEXT_PUBLIC_API_URL_MENU;
-  if (!apiUrl) throw new Error('NEXT_PUBLIC_API_URL_MENU is not defined.');
+  const apiUrl = process.env.NEXT_PUBLIC_API_MENU;
+  if (!apiUrl) throw new Error('NEXT_PUBLIC_API_MENU is not defined.');
   const response = await fetch(apiUrl);
   if (!response.ok) throw new Error('Network response was not ok');
   const data = await response.json();
