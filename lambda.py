@@ -1,15 +1,17 @@
 import json
 import boto3
 from decimal import Decimal
+import traceback
 
 # Initialize DynamoDB resource
-dynamodb = boto3.resource('dynamodb')
+dynamodb = boto3.resource('dynamodb', region_name='ca-central-1')
 table = dynamodb.Table('MomotaroSushiMenu_DB')
 
 def decimal_default(obj):
-    """A helper function to serialize Decimal objects to floats."""
     if isinstance(obj, Decimal):
         return float(obj)
+    if isinstance(obj, set):
+        return list(obj)
     raise TypeError
 
 def lambda_handler(event, context):
@@ -25,19 +27,19 @@ def lambda_handler(event, context):
         ]
         
         origin = event.get('headers', {}).get('origin') or event.get('headers', {}).get('Origin')
-        
+
         cors_headers = {
             'Content-Type': 'application/json',
             'Access-Control-Allow-Methods': 'GET,OPTIONS',
             'Access-Control-Allow-Headers': 'Content-Type',
             'Access-Control-Max-Age': '86400',
         }
-        
-        if origin and origin in allowed_origins:
-            cors_headers['Access-Control-Allow-Origin'] = origin
-        else:
+
+        if not origin or origin in allowed_origins:
             if origin:
                 cors_headers['Access-Control-Allow-Origin'] = origin
+        else:
+            cors_headers['Access-Control-Allow-Origin'] = origin
             return {
                 'statusCode': 403,
                 'body': json.dumps({'error': f"Unauthorized Origin: {origin}"}),
@@ -55,14 +57,16 @@ def lambda_handler(event, context):
         # 1. Use placeholders (starting with #) for all reserved words.
         # It's also a good practice for any attribute name you are not sure about.
 
-        projection = "ItemName, #cat, #desc, ItemNumber, #loc, #opt, Price, ImageUrl, Tags"
+        projection = "ItemName, #cat, #desc, ItemNumber, #loc, #opt, Price, ImageUrl, #tags"
 
         # 2. Create a dictionary to map the placeholders to the real attribute names.
         expr_attr_names = {
             '#cat': 'Category',
             '#desc': 'Description',
             '#loc': 'Location',   # Not reserved, but using it is a safe habit.
-            '#opt': 'Options'
+            '#opt': 'Options',
+            '#tags': 'Tags'
+
         }
 
         # If it's a GET request and the origin is valid, proceed to fetch data
@@ -87,11 +91,12 @@ def lambda_handler(event, context):
         }
 
     except Exception as e:
-        # If any other error occurs, log it and return a 500 Internal Server Error
-        print("Error:", str(e))
+        print("Error type:", type(e).__name__)
+        print("Error message:", str(e))
+        print("Traceback:", traceback.format_exc())
         return {
             'statusCode': 500,
-            'body': json.dumps({'error': 'An internal server error occurred.'}),
+            'body': json.dumps({'error': str(e)}),  # Return actual error temporarily
             'headers': {
                 'Content-Type': 'application/json',
                 'Access-Control-Allow-Origin': '*' 

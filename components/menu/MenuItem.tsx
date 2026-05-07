@@ -38,18 +38,18 @@ export default function MenuItem({ item, onSelect }: MenuItemProps) {
         }}>
           {item.description}
         </div>
+        {item.tags && item.tags.length > 0 && (
+          <div style={{ display: 'flex', gap: 4, flexWrap: 'wrap', marginBottom: 6 }}>
+            {item.tags.map(tag => (
+              <TagBadge key={tag} tag={tag} />
+            ))}
+          </div>
+        )}
         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
           <span style={{ fontSize: '14px', fontWeight: 600, color: 'var(--text)' }}>
             ${Number(item.Price || 0).toFixed(2)}
             {hasPriceAffectingOptions && <span style={{ fontSize: '10px', fontWeight: 300, color: 'var(--text-3)', marginLeft: '1px' }}>+</span>}
           </span>
-          {item.tags && item.tags.length > 0 && (
-        <div style={{ display: 'flex', gap: 4, flexWrap: 'wrap', marginBottom: 4 }}>
-          {item.tags.map(tag => (
-            <TagBadge key={tag} tag={tag} />
-          ))}
-        </div>
-        )}
           <button
             onClick={(e) => { e.stopPropagation(); onSelect(item); }}
             style={{

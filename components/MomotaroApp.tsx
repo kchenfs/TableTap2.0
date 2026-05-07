@@ -10,6 +10,7 @@ import CartSheet from '@/components/cart/CartSheet';
 import LoadingSpinner from '@/components/ui/LoadingSpinner';
 import ErrorMessage from '@/components/ui/ErrorMessage';
 import ItemOptionsModal from '@/components/menu/ItemOptionsModal';
+import OrderConfirmation from '@/components/ui/OrderConfirmation';
 import { MenuItem, CartItem } from '@/lib/types';
 import { nanoid } from 'nanoid';
 import axios from 'axios';
@@ -30,11 +31,10 @@ interface MomotaroAppProps {
   tableId: string;
 }
 
-
 const stripePromise = loadStripe(process.env.NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY || '');
 
-
-export default function MomotaroApp({ appMode, tableId }: MomotaroAppProps) {  const { isLoading, error, categories } = useMenu();
+export default function MomotaroApp({ appMode, tableId }: MomotaroAppProps) {
+  const { isLoading, error, categories } = useMenu();
   const { cart, addItem, clearCart, orderNote, isCartOpen, openCart, closeCart } = useCartStore();
 
   const [activeCategory, setActiveCategory] = useState<string | null>(null);
@@ -44,15 +44,27 @@ export default function MomotaroApp({ appMode, tableId }: MomotaroAppProps) {  c
   const [clientSecret, setClientSecret] = useState<string | null>(null);
   const [isCheckoutModalOpen, setIsCheckoutModalOpen] = useState(false);
   const [toastMessage, setToastMessage] = useState<string | null>(null);
-  const toastTimeoutRef = useRef<NodeJS.Timeout | null>(null);
 
-  // Chatbot loader
+  // Order confirmation state
+  const [confirmedCart, setConfirmedCart] = useState<CartItem[]>([]);
+  const [confirmedTotal, setConfirmedTotal] = useState(0);
+  const [confirmedOrderId, setConfirmedOrderId] = useState('');
+  const [showConfirmation, setShowConfirmation] = useState(false);
+
+  // Refs
+  const toastTimeoutRef = useRef<NodeJS.Timeout | null>(null);
+  const catNavRef = useRef<HTMLDivElement | null>(null);
+  const observerRef = useRef<IntersectionObserver | null>(null);
+
+  // ── Chatbot loader ──
   useEffect(() => {
     const CLOUDFRONT_URL = 'https://d2ibqiw1xziqq9.cloudfront.net';
     const init = async () => {
       if (!window.ChatBotUiLoader) { setTimeout(init, 100); return; }
       try {
-        const file = appMode === 'takeout' ? 'lex-web-ui-loader-config-takeout.json' : 'lex-web-ui-loader-config-dinein.json';
+        const file = appMode === 'takeout'
+          ? 'lex-web-ui-loader-config-takeout.json'
+          : 'lex-web-ui-loader-config-dinein.json';
         const res = await fetch(`${CLOUDFRONT_URL}/${file}`);
         if (!res.ok) throw new Error('Config load failed');
         const cfg = await res.json();
@@ -69,67 +81,128 @@ export default function MomotaroApp({ appMode, tableId }: MomotaroAppProps) {  c
     init();
   }, [appMode]);
 
+  // ── IntersectionObserver: active category + auto-scroll nav pill ──
   useEffect(() => {
+    // Set initial active category
     if (categories && categories.length > 0 && !activeCategory) {
       setActiveCategory(categories[0].id);
     }
-  }, [categories, activeCategory]);
 
+    // Disconnect any previous observer
+    if (observerRef.current) observerRef.current.disconnect();
+
+    const HEADER_H = 60 + 48; // header height + cat nav height
+
+    observerRef.current = new IntersectionObserver(
+      (entries) => {
+        const visible = entries
+          .filter(e => e.isIntersecting)
+          .sort((a, b) => a.boundingClientRect.top - b.boundingClientRect.top);
+
+        if (visible.length > 0) {
+          const id = visible[0].target.getAttribute('data-cat-id');
+          if (id) {
+            setActiveCategory(id);
+            // Scroll the active pill into centre of the nav bar
+            if (catNavRef.current) {
+              const pill = catNavRef.current.querySelector<HTMLElement>(`[data-pill="${id}"]`);
+              if (pill) {
+                const nav = catNavRef.current;
+                const scrollTarget = pill.offsetLeft - nav.offsetWidth / 2 + pill.offsetWidth / 2;
+                nav.scrollTo({ left: scrollTarget, behavior: 'smooth' });
+              }
+            }
+          }
+        }
+      },
+      {
+        rootMargin: `-${HEADER_H + 10}px 0px -55% 0px`,
+        threshold: 0,
+      }
+    );
+
+    // Observe each category section
+    categories?.forEach(cat => {
+      const el = document.getElementById(cat.id);
+      if (el) observerRef.current?.observe(el);
+    });
+
+    return () => observerRef.current?.disconnect();
+  }, [categories]);
+
+  // ── Filtered categories for search ──
   const filteredCategories = useMemo(() => {
     if (!categories) return [];
     if (!searchTerm.trim()) return categories;
     const term = searchTerm.toLowerCase();
     return categories
-      .map(cat => ({ ...cat, items: cat.items.filter(i => i.name.toLowerCase().includes(term) || i.description.toLowerCase().includes(term)) }))
+      .map(cat => ({
+        ...cat,
+        items: cat.items.filter(i =>
+          i.name.toLowerCase().includes(term) ||
+          i.description.toLowerCase().includes(term)
+        ),
+      }))
       .filter(cat => cat.items.length > 0);
   }, [categories, searchTerm]);
 
+  // ── Scroll to category on pill tap ──
   const handleScrollToCategory = (id: string) => {
     setActiveCategory(id);
     const el = document.getElementById(id);
     if (el) {
       const offset = 60 + 48 + 12;
-      window.scrollTo({ top: el.getBoundingClientRect().top + window.pageYOffset - offset, behavior: 'smooth' });
+      window.scrollTo({
+        top: el.getBoundingClientRect().top + window.pageYOffset - offset,
+        behavior: 'smooth',
+      });
     }
   };
 
+  // ── Add to cart from modal ──
   const handleAddToCart = (item: CartItem) => {
     addItem(item);
     setSelectedItem(null);
   };
 
-  // NEW: Smart click handler
+  // ── Item tap: open modal or direct add ──
   const handleItemClick = (item: MenuItem) => {
     const hasOptions = item.options && item.options.length > 0;
-    
     if (hasOptions) {
-      // It has options (like beef vs veg gyoza) -> Open Modal
       setSelectedItem(item);
     } else {
-      // No options needed -> Direct Add to Cart
       addItem({
         cartId: `${item.id}-default`,
         menuItem: item,
         selectedOptions: {},
         quantity: 1,
-        finalPrice: Number(item.Price || 0)
+        finalPrice: Number(item.Price || 0),
       });
-      
-      // Trigger Toast
       setToastMessage(`${item.name} added`);
       if (toastTimeoutRef.current) clearTimeout(toastTimeoutRef.current);
       toastTimeoutRef.current = setTimeout(() => setToastMessage(null), 2400);
     }
   };
 
+  // ── Totals ──
   const subtotal = useMemo(() => cart.reduce((s, i) => s + i.finalPrice * i.quantity, 0), [cart]);
-  const taxRate = 0.13; // 13% HST for Ontario
+  const taxRate = 0.13;
   const total = subtotal * (1 + taxRate);
 
+  // ── Stripe payment intent (takeout only) ──
   useEffect(() => {
     if (appMode === 'takeout' && total > 0) {
       const url = process.env.NEXT_PUBLIC_API_CHECKOUT || '';
-      axios.post(url, { amount: Math.round(total * 100), cart: cart.map(i => ({ id: i.menuItem.id, name: i.menuItem.name, quantity: i.quantity, price: i.finalPrice, selectedOptions: i.selectedOptions })) })
+      axios.post(url, {
+        amount: Math.round(total * 100),
+        cart: cart.map(i => ({
+          id: i.menuItem.id,
+          name: i.menuItem.name,
+          quantity: i.quantity,
+          price: i.finalPrice,
+          selectedOptions: i.selectedOptions,
+        })),
+      })
         .then(res => setClientSecret(res.data.clientSecret))
         .catch(err => console.error('Intent error:', err));
     } else {
@@ -137,9 +210,10 @@ export default function MomotaroApp({ appMode, tableId }: MomotaroAppProps) {  c
     }
   }, [total, cart, appMode]);
 
+  // ── Checkout handler ──
   const handleCheckout = async () => {
     setIsCheckingOut(true);
-    
+
     if (appMode === 'takeout') {
       if (clientSecret) {
         setIsCheckoutModalOpen(true);
@@ -148,16 +222,15 @@ export default function MomotaroApp({ appMode, tableId }: MomotaroAppProps) {  c
       setIsCheckingOut(false);
     } else {
       try {
-        // 1. Prepare Request Configuration
         const url = process.env.NEXT_PUBLIC_API_DINE_IN || '';
         const config = {
           headers: {
             'Content-Type': 'application/json',
-            'x-api-key': process.env.NEXT_PUBLIC_API_KEY || ''
-          }
+            'x-api-key': process.env.NEXT_PUBLIC_API_KEY || '',
+          },
         };
 
-        // 2. Prepare Payload
+        const orderId = nanoid(5).toUpperCase();
         const payload = {
           items: cart.map(i => ({
             id: i.menuItem.id,
@@ -172,26 +245,27 @@ export default function MomotaroApp({ appMode, tableId }: MomotaroAppProps) {  c
           })),
           total,
           orderDate: new Date().toISOString(),
-          order_id: nanoid(5).toUpperCase(),
+          order_id: orderId,
           notes: orderNote || '',
           table: tableId,
           orderType: appMode,
         };
 
-        // 3. Fire the Request
         await axios.post(url, payload, config);
 
-        // 4. Success Handlers
+        // Show confirmation screen
+        setConfirmedCart([...cart]);
+        setConfirmedTotal(total);
+        setConfirmedOrderId(orderId);
+        setShowConfirmation(true);
         clearCart();
         closeCart();
-        setToastMessage("Order sent to kitchen!");
-        
-        if (toastTimeoutRef.current) clearTimeout(toastTimeoutRef.current);
-        toastTimeoutRef.current = setTimeout(() => setToastMessage(null), 3500);
 
       } catch (e) {
         console.error('Checkout failed:', e);
-        setToastMessage("Connection error. Please try again.");
+        setToastMessage('Connection error. Please try again.');
+        if (toastTimeoutRef.current) clearTimeout(toastTimeoutRef.current);
+        toastTimeoutRef.current = setTimeout(() => setToastMessage(null), 3500);
       } finally {
         setIsCheckingOut(false);
       }
@@ -200,16 +274,31 @@ export default function MomotaroApp({ appMode, tableId }: MomotaroAppProps) {  c
 
   const stripeOptions: StripeElementsOptions = {
     clientSecret: clientSecret || undefined,
-    appearance: { theme: 'night', labels: 'floating', variables: { colorPrimary: '#c8a96e', colorBackground: '#181818', colorText: '#f0ede8' } },
+    appearance: {
+      theme: 'night',
+      labels: 'floating',
+      variables: { colorPrimary: '#c8a96e', colorBackground: '#181818', colorText: '#f0ede8' },
+    },
   };
 
   return (
     <div style={{ minHeight: '100vh', background: 'var(--bg)', color: 'var(--text)' }}>
       <Header searchTerm={searchTerm} onSearchChange={setSearchTerm} />
-      <CategoryNav categories={categories || []} activeCategory={activeCategory} onCategoryClick={handleScrollToCategory} />
+
+      <CategoryNav
+        categories={categories || []}
+        activeCategory={activeCategory}
+        onCategoryClick={handleScrollToCategory}
+        navRef={catNavRef}
+      />
 
       {/* Hero */}
-      <div style={{ margin: '14px', borderRadius: '18px', background: 'var(--surface)', border: '1px solid var(--border2)', padding: '20px 18px', display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '12px', position: 'relative' }}>
+      <div style={{
+        margin: '14px', borderRadius: '18px',
+        background: 'var(--surface)', border: '1px solid var(--border2)',
+        padding: '20px 18px', display: 'flex', alignItems: 'center',
+        justifyContent: 'space-between', gap: '12px', position: 'relative',
+      }}>
         <div>
           <h1 style={{ fontFamily: 'var(--font-cormorant), serif', fontSize: '24px', fontWeight: 600, lineHeight: 1.2, marginBottom: '5px' }}>
             {appMode === 'dine-in' ? (
@@ -223,7 +312,11 @@ export default function MomotaroApp({ appMode, tableId }: MomotaroAppProps) {  c
           </p>
         </div>
         {appMode === 'dine-in' && (
-          <div style={{ flexShrink: 0, background: 'var(--gold-dim)', border: '1px solid rgba(200,169,110,0.25)', borderRadius: '12px', padding: '10px 14px', textAlign: 'center' }}>
+          <div style={{
+            flexShrink: 0, background: 'var(--gold-dim)',
+            border: '1px solid rgba(200,169,110,0.25)',
+            borderRadius: '12px', padding: '10px 14px', textAlign: 'center',
+          }}>
             <div style={{ fontFamily: 'var(--font-cormorant), serif', fontSize: '30px', fontWeight: 600, color: 'var(--gold)', lineHeight: 1 }}>
               {tableId.replace('table-', '')}
             </div>
@@ -240,7 +333,12 @@ export default function MomotaroApp({ appMode, tableId }: MomotaroAppProps) {  c
           <div style={{ display: 'flex', flexDirection: 'column', gap: '40px' }}>
             {filteredCategories.length > 0 ? (
               filteredCategories.map((cat, i) => (
-                <MenuSection key={cat.id} category={cat} onItemSelect={handleItemClick} delay={i * 100} />
+                <MenuSection
+                  key={cat.id}
+                  category={cat}
+                  onItemSelect={handleItemClick}
+                  delay={i * 100}
+                />
               ))
             ) : (
               <div style={{ textAlign: 'center', padding: '48px 0', color: 'var(--text-2)' }}>
@@ -276,12 +374,18 @@ export default function MomotaroApp({ appMode, tableId }: MomotaroAppProps) {  c
       {/* Stripe checkout (takeout only) */}
       {isCheckoutModalOpen && clientSecret && appMode === 'takeout' && (
         <>
-          <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.65)', zIndex: 200, backdropFilter: 'blur(6px)' }} onClick={() => setIsCheckoutModalOpen(false)} />
+          <div
+            style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.65)', zIndex: 200, backdropFilter: 'blur(6px)' }}
+            onClick={() => setIsCheckoutModalOpen(false)}
+          />
           <div style={{ position: 'fixed', inset: 0, zIndex: 201, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '16px' }}>
             <div style={{ position: 'relative', width: '100%', maxWidth: '460px', background: 'var(--surface)', borderRadius: '20px', border: '1px solid var(--border2)', display: 'flex', flexDirection: 'column', maxHeight: '90vh' }}>
               <div style={{ flexShrink: 0, padding: '18px 20px', borderBottom: '1px solid var(--border)', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
                 <h2 style={{ fontFamily: 'var(--font-cormorant), serif', fontSize: '20px', fontWeight: 600 }}>Payment Details</h2>
-                <button onClick={() => setIsCheckoutModalOpen(false)} style={{ width: '32px', height: '32px', borderRadius: '50%', background: 'var(--surface2)', border: '1px solid var(--border)', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer', color: 'var(--text-2)' }}>
+                <button
+                  onClick={() => setIsCheckoutModalOpen(false)}
+                  style={{ width: '32px', height: '32px', borderRadius: '50%', background: 'var(--surface2)', border: '1px solid var(--border)', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer', color: 'var(--text-2)' }}
+                >
                   <X size={15} />
                 </button>
               </div>
@@ -294,31 +398,34 @@ export default function MomotaroApp({ appMode, tableId }: MomotaroAppProps) {  c
           </div>
         </>
       )}
-      {/* NEW: Toast Notification */}
+
+      {/* Toast notification */}
       <div style={{
-        position: 'fixed',
-        bottom: '80px', /* Just above your sticky cart bar */
-        left: '50%',
+        position: 'fixed', bottom: '80px', left: '50%',
         transform: toastMessage ? 'translateX(-50%) translateY(0)' : 'translateX(-50%) translateY(40px)',
         opacity: toastMessage ? 1 : 0,
         pointerEvents: 'none',
-        background: 'var(--surface2)',
-        border: '1px solid var(--border2)',
-        borderRadius: '10px',
-        padding: '8px 14px',
-        fontSize: '12px',
-        color: 'var(--text)',
-        zIndex: 300,
-        display: 'flex',
-        alignItems: 'center',
-        gap: '6px',
+        background: 'var(--surface2)', border: '1px solid var(--border2)',
+        borderRadius: '10px', padding: '8px 14px',
+        fontSize: '12px', color: 'var(--text)',
+        zIndex: 300, display: 'flex', alignItems: 'center', gap: '6px',
         transition: 'transform 0.25s cubic-bezier(0.16,1,0.3,1), opacity 0.25s',
-        whiteSpace: 'nowrap'
+        whiteSpace: 'nowrap',
       }}>
         <div style={{ width: '6px', height: '6px', borderRadius: '50%', background: 'var(--gold)' }} />
         {toastMessage}
       </div>
 
+      {/* Order confirmation screen */}
+      <OrderConfirmation
+        isOpen={showConfirmation}
+        cart={confirmedCart}
+        total={confirmedTotal}
+        orderId={confirmedOrderId}
+        appMode={appMode}
+        tableId={tableId}
+        onDone={() => setShowConfirmation(false)}
+      />
     </div>
   );
 }
