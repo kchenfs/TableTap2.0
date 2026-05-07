@@ -18,6 +18,7 @@ export interface MenuItem {
   category: string;
   location: string;
   options: OptionGroup[];
+  tags?: string[];
   imageUrl?: string; // CloudFront URL e.g. https://dXXX.cloudfront.net/images/item.jpg
 }
 
@@ -28,6 +29,7 @@ export interface APIMenuItem {
   Price: number;
   Category: string;
   Location: string;
+  Tags?: string[]; // SS from DynamoDB comes through as string[]
   Options?: OptionGroup[];
   ImageUrl?: string; // Optional — items without a photo fall back to a placeholder
 }

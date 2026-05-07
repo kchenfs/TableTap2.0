@@ -54,7 +54,8 @@ def lambda_handler(event, context):
         
         # 1. Use placeholders (starting with #) for all reserved words.
         # It's also a good practice for any attribute name you are not sure about.
-        projection = "ItemName, #cat, #desc, ItemNumber, #loc, #opt, Price"
+
+        projection = "ItemName, #cat, #desc, ItemNumber, #loc, #opt, Price, ImageUrl, Tags"
 
         # 2. Create a dictionary to map the placeholders to the real attribute names.
         expr_attr_names = {

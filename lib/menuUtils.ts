@@ -26,6 +26,8 @@ export const transformAPIMenuItem = (apiItem: any): MenuItem => {
   const location = getProp(apiItem, 'Location');
   const options = getProp(apiItem, 'Options');
   const imageUrl = getProp(apiItem, 'ImageUrl'); // CloudFront URL stored in DynamoDB
+  const tags = getProp(apiItem, 'Tags');
+
   return {
     id: String(itemNumber || ''),
     name: itemName || 'Unnamed Item',
@@ -35,6 +37,7 @@ export const transformAPIMenuItem = (apiItem: any): MenuItem => {
     location: location || '',
     options: Array.isArray(options) ? options : [],
     imageUrl: imageUrl || undefined,
+    tags: Array.isArray(tags) ? tags : [],
   };
 };
 
