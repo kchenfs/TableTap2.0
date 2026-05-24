@@ -10,7 +10,7 @@ metadata:
     traefik.ingress.kubernetes.io/router.tls.certresolver: letsencrypt
 spec:
   rules:
-    - host: takeout.momotarosushi.ca
+    - host: take-out.momotarosushi.ca
       http:
         paths:
           - path: /
@@ -20,7 +20,7 @@ spec:
                 name: momotaro-v2-service
                 port:
                   number: 80
-    - host: dinein.momotarosushi.ca
+    - host: dine-in.momotarosushi.ca
       http:
         paths:
           - path: /
@@ -32,5 +32,5 @@ spec:
                   number: 80
   tls:
     - hosts:
-        - takeout.momotarosushi.ca
-        - dinein.momotarosushi.ca
+        - take-out.momotarosushi.ca
+        - dine-in.momotarosushi.ca

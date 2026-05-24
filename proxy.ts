@@ -6,7 +6,7 @@ export function proxy(request: NextRequest) {
   const hostname = request.headers.get('host') || '';
   const pathname = request.nextUrl.pathname;
 
-  const appMode = hostname.includes('takeout') ? 'takeout' : 'dine-in';
+  const appMode = hostname.includes('take-out') ? 'takeout' : 'dine-in';
   let tableId = appMode === 'takeout' ? 'takeout' : 'table-1';
 
   let response;
