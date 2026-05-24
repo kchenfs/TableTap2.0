@@ -14,3 +14,12 @@ module "menu_images_cdn" {
 resource "random_id" "suffix" {
   byte_length = 4
 }
+
+module "app_secrets" {
+  source = "../../modules/app-secrets"
+
+  environment = var.environment
+  aws_region  = var.aws_region
+  api_key     = var.api_key
+  api_dine_in = var.api_dine_in
+}

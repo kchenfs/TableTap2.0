@@ -1,0 +1,12 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(Get-ChildItem -Path \"C:\\\\Users\\\\Ken\\\\Downloads\\\\momotaro-next\\\\momotaro-next\" -Force)",
+      "Bash(Select-Object Name, Mode)",
+      "WebFetch(domain:github.com)",
+      "WebFetch(domain:raw.githubusercontent.com)",
+      "Bash(git *)",
+      "PowerShell(winget upgrade *2)"
+    ]
+  }
+}

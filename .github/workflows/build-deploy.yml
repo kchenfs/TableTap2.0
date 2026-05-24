@@ -1,0 +1,53 @@
+name: Build & Deploy to k3s
+
+on:
+  push:
+    branches: [main]
+
+jobs:
+  build-and-deploy:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      packages: write
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up QEMU
+        uses: docker/setup-qemu-action@v3
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Log in to GHCR
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Build and push
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          push: true
+          platforms: linux/amd64,linux/arm64
+          tags: ghcr.io/kchenfs/tabletap2.0:${{ github.sha }}
+          build-args: |
+            NEXT_PUBLIC_API_MENU=${{ secrets.NEXT_PUBLIC_API_MENU }}
+            NEXT_PUBLIC_API_CHECKOUT=${{ secrets.NEXT_PUBLIC_API_CHECKOUT }}
+            NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY=${{ secrets.NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+      - name: Update image tag in deployment.yaml
+        run: |
+          sed -i "s|ghcr.io/kchenfs/tabletap2.0:.*|ghcr.io/kchenfs/tabletap2.0:${{ github.sha }}|" k8s/01-deploy/deployment.yaml
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add k8s/01-deploy/deployment.yaml
+          git commit -m "ci: update image to ${{ github.sha }}"
+          git push
+

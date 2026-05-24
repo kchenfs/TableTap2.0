@@ -189,47 +189,36 @@ export default function MomotaroApp({ appMode, tableId }: MomotaroAppProps) {
   const taxRate = 0.13;
   const total = subtotal * (1 + taxRate);
 
-  // ── Stripe payment intent (takeout only) ──
-  useEffect(() => {
-    if (appMode === 'takeout' && total > 0) {
-      const url = process.env.NEXT_PUBLIC_API_CHECKOUT || '';
-      axios.post(url, {
-        amount: Math.round(total * 100),
-        cart: cart.map(i => ({
-          id: i.menuItem.id,
-          name: i.menuItem.name,
-          quantity: i.quantity,
-          price: i.finalPrice,
-          selectedOptions: i.selectedOptions,
-        })),
-      })
-        .then(res => setClientSecret(res.data.clientSecret))
-        .catch(err => console.error('Intent error:', err));
-    } else {
-      setClientSecret(null);
-    }
-  }, [total, cart, appMode]);
-
   // ── Checkout handler ──
   const handleCheckout = async () => {
     setIsCheckingOut(true);
 
     if (appMode === 'takeout') {
-      if (clientSecret) {
+      try {
+        const url = process.env.NEXT_PUBLIC_API_CHECKOUT || '';
+        const res = await axios.post(url, {
+          amount: Math.round(total * 100),
+          cart: cart.map(i => ({
+            id: i.menuItem.id,
+            name: i.menuItem.name,
+            quantity: i.quantity,
+            price: i.finalPrice,
+            selectedOptions: i.selectedOptions,
+          })),
+        });
+        setClientSecret(res.data.clientSecret);
         setIsCheckoutModalOpen(true);
         closeCart();
+      } catch (err) {
+        console.error('Intent error:', err);
+        setToastMessage('Payment setup failed. Please try again.');
+        if (toastTimeoutRef.current) clearTimeout(toastTimeoutRef.current);
+        toastTimeoutRef.current = setTimeout(() => setToastMessage(null), 3500);
+      } finally {
+        setIsCheckingOut(false);
       }
-      setIsCheckingOut(false);
     } else {
       try {
-        const url = process.env.NEXT_PUBLIC_API_DINE_IN || '';
-        const config = {
-          headers: {
-            'Content-Type': 'application/json',
-            'x-api-key': process.env.NEXT_PUBLIC_API_KEY || '',
-          },
-        };
-
         const orderId = nanoid(5).toUpperCase();
         const payload = {
           items: cart.map(i => ({
@@ -251,7 +240,7 @@ export default function MomotaroApp({ appMode, tableId }: MomotaroAppProps) {
           orderType: appMode,
         };
 
-        await axios.post(url, payload, config);
+        await axios.post('/api/dine-in', payload);
 
         // Show confirmation screen
         setConfirmedCart([...cart]);

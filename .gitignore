@@ -48,3 +48,5 @@ npm-debug.log*
 .cache/
 .turbo/
 coverage/
+
+*.auto.tfvars
