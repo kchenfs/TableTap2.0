@@ -6,7 +6,7 @@ metadata:
   annotations:
     prometheus.io/scrape: "false"
 spec:
-  replicas: 2
+  replicas: 1
   selector:
     matchLabels:
       app: momotaro-v2
@@ -47,10 +47,4 @@ spec:
             periodSeconds: 10
             timeoutSeconds: 3
             failureThreshold: 3
-          resources:
-            requests:
-              cpu: 100m
-              memory: 256Mi
-            limits:
-              cpu: 500m
-              memory: 512Mi
+          resources: {}
