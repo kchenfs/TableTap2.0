@@ -6,7 +6,11 @@ import Providers from './providers';
 const cormorant = Cormorant_Garamond({ subsets: ['latin'], weight: ['400','500','600'], variable: '--font-cormorant' });
 const outfit = Outfit({ subsets: ['latin'], weight: ['300','400','500','600'], variable: '--font-outfit' });
 
-export const metadata: Metadata = { title: 'Momotaro Sushi', description: 'Restaurant online ordering' };
+export const metadata: Metadata = {
+  title: 'Momotaro Sushi',
+  description: 'Restaurant online ordering',
+  icons: { icon: '/favicon.png' },
+};
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (
