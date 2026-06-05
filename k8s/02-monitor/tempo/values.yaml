@@ -1,0 +1,24 @@
+# k8s/02-monitor/tempo/values.yaml
+tempo:
+  receivers:
+    otlp:
+      protocols:
+        http:
+          endpoint: 0.0.0.0:4318
+        grpc:
+          endpoint: 0.0.0.0:4317
+
+ingress:
+  enabled: true
+  ingressClassName: traefik
+  annotations:
+    traefik.ingress.kubernetes.io/router.tls: "true"
+    traefik.ingress.kubernetes.io/router.tls.certresolver: "le-prod"
+  hosts:
+    - host: traces.momotarosushi.ca
+      paths:
+        - path: /
+          pathType: Prefix
+  service:
+    name: tempo
+    port: 4318
