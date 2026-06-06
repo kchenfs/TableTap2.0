@@ -17,7 +17,7 @@ spec:
     spec:
       containers:
         - name: momotaro-v2
-          image: ghcr.io/kchenfs/tabletap2.0:8021e2136b4e2c70de09f7aff4762f02afe85b9b
+          image: ghcr.io/kchenfs/tabletap2.0:efa411c1e783875d7a31172d9cb0edf93946169d
           ports:
             - containerPort: 3000
           env:
