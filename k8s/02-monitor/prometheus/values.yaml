@@ -27,6 +27,12 @@ prometheus:
 
 # 3. Configure the bundled Grafana
 grafana:
+  # Admin creds sourced from AWS Parameter Store via ESO (grafana-admin secret in
+  # the monitoring namespace). Prevents ArgoCD re-rendering a random password each sync.
+  admin:
+    existingSecret: grafana-admin
+    userKey: admin-user
+    passwordKey: admin-password
   persistence:
     enabled: true
     storageClassName: local-path
@@ -47,7 +53,6 @@ grafana:
     hosts:
       - grafana.momotarosushi.ca
     path: /
-  grafana:
   initChownData:
     enabled: false
   podSecurityContext:
